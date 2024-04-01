@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+.venv-linux/
+.vscode/
+bin/
+bin2/
+exported-assets/
