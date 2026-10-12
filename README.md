@@ -2,6 +2,27 @@
 
 A comprehensive Hotel Management System built with Python (Streamlit) for the frontend and MySQL as the backend database.
 
+## 🔧 Fixes Applied
+- **`requirements.txt` was empty** — `pip install -r requirements.txt` installed nothing, so the
+  app couldn't even start. Populated with the actual runtime dependencies.
+- **DB credentials were hardcoded in source** (and three different files disagreed on the
+  database name: `hotel_management` in the README, `hotel_db` in `db.py`, `hotel_mgmt` in a stray
+  SQL file) — moved to `.env` (see `.env.example`), read via `python-dotenv`.
+- **Login passwords were stored and compared in plaintext** (`SELECT * FROM UserLogin WHERE
+  Username = %s AND Password = %s`) — switched to PBKDF2-HMAC-SHA256 hashing with a random
+  per-user salt; the default admin seed row now stores a hash, not `admin123` in the clear.
+- **Dashboard's "Revenue per Month" chart was a labeled hack** (`PaymentID % 12`, with a comment
+  admitting "real one needs payment date") — `Payment.PaymentDate` already existed in the schema
+  but wasn't being queried; now it's fetched and used for real month grouping.
+- **Removed three dead/misleading files**: `connector.py` (an unused, unimported duplicate of the
+  DB connection logic with yet another hardcoded password), `Frontend.py` (empty, unreferenced),
+  and `HOTEL MANAGEMENT SYSTEM.sql` (an entirely different, incompatible schema — `hotel_mgmt`
+  with snake_case tables — left over from an earlier draft; following it instead of `SQLTABLES.sql`
+  would set up a database the app can't actually use).
+- **README setup instructions pointed at code that didn't exist** (a `DB_CONFIG` dict supposedly
+  in `app.py` lines 18–24, a `CREATE DATABASE hotel_management` that didn't match any table
+  definitions anywhere) — rewritten to match what the code actually does.
+
 ## Features
 
 - **Guest Management**: Full CRUD operations for guest information
@@ -28,20 +49,26 @@ A comprehensive Hotel Management System built with Python (Streamlit) for the fr
 
 3. **Set up MySQL Database:**
    - Make sure MySQL server is running
-   - Create a database named `hotel_management`:
-     ```sql
-     CREATE DATABASE hotel_management;
+   - Create the database and all tables by running the schema script (this also creates
+     the `hotel_db` database and seeds a default admin login):
+     ```bash
+     mysql -u root -p < SQLTABLES.sql
      ```
-   - Update the database configuration in `app.py` (lines 18-24):
-     ```python
-     DB_CONFIG = {
-         'host': 'localhost',
-         'database': 'hotel_management',
-         'user': 'root',          # Change to your MySQL username
-         'password': 'root',       # Change to your MySQL password
-         'port': 3306
-     }
+
+4. **Configure database credentials:**
+   - Copy `.env.example` to `.env` and fill in your MySQL credentials:
+     ```bash
+     cp .env.example .env
      ```
+     ```env
+     DB_HOST=localhost
+     DB_PORT=3306
+     DB_USER=root
+     DB_PASSWORD=your_mysql_password
+     DB_NAME=hotel_db
+     ```
+   - `db.py` reads these via `python-dotenv`; nothing is hardcoded in source. `.env` is
+     gitignored, so your credentials never get committed.
 
 ## Running the Application
 
@@ -56,36 +83,39 @@ A comprehensive Hotel Management System built with Python (Streamlit) for the fr
 
 ## Database Schema
 
-### Guest Table
-- `id` (INT, PRIMARY KEY, AUTO_INCREMENT)
-- `name` (VARCHAR(100), NOT NULL)
-- `email` (VARCHAR(100), UNIQUE, NOT NULL)
-- `phone` (VARCHAR(20), NOT NULL)
-- `created_at` (TIMESTAMP)
+The authoritative schema is `SQLTABLES.sql` (run it to set up the database — see Installation).
+It defines: `Guest`, `Room`, `Booking`, `Payment`, `Staff`, `ServiceRequest`, `Amenity`,
+`RoomAmenity`, `Review`, `TravelPackage`, `RoomMaintenance`, and `UserLogin`.
 
-### Room Table
-- `room_number` (INT, PRIMARY KEY)
-- `type` (VARCHAR(50), NOT NULL)
-- `availability` (BOOLEAN, DEFAULT TRUE)
-- `price` (DECIMAL(10, 2), NOT NULL)
-- `created_at` (TIMESTAMP)
+### Guest
+- `GuestID` (INT, PRIMARY KEY, AUTO_INCREMENT), `Name`, `Email`, `Phone`
 
-### Booking Table
-- `booking_id` (INT, PRIMARY KEY, AUTO_INCREMENT)
-- `guest_id` (INT, FOREIGN KEY → Guest.id)
-- `room_number` (INT, FOREIGN KEY → Room.room_number)
-- `check_in` (DATE, NOT NULL)
-- `check_out` (DATE, NOT NULL)
-- `status` (VARCHAR(20), DEFAULT 'confirmed')
-- `created_at` (TIMESTAMP)
+### Room
+- `RoomID` (INT, PRIMARY KEY, AUTO_INCREMENT), `RoomNumber`, `Type`, `Price` (DECIMAL), `IsAvailable` (BOOLEAN)
 
-### Payment Table
-- `payment_id` (INT, PRIMARY KEY, AUTO_INCREMENT)
-- `booking_id` (INT, FOREIGN KEY → Booking.booking_id)
-- `amount` (DECIMAL(10, 2), NOT NULL)
-- `method` (VARCHAR(50), NOT NULL)
-- `status` (VARCHAR(20), DEFAULT 'pending')
-- `payment_date` (TIMESTAMP)
+### Booking
+- `BookingID` (INT, PRIMARY KEY, AUTO_INCREMENT), `GuestID` → Guest, `RoomID` → Room,
+  `CheckInDate`, `CheckOutDate`
+
+### Payment
+- `PaymentID` (INT, PRIMARY KEY, AUTO_INCREMENT), `BookingID` → Booking, `Amount`, `Method`,
+  `PaymentDate` (TIMESTAMP, defaults to now)
+
+### UserLogin
+- `UserID` (INT, PRIMARY KEY, AUTO_INCREMENT), `Username` (UNIQUE), `Password` (PBKDF2-HMAC-SHA256
+  hash, stored as `salt_hex$hash_hex` — never plaintext), `Role`
+
+Staff, ServiceRequest, Amenity/RoomAmenity, Review, TravelPackage, and RoomMaintenance follow the
+same pattern — see `SQLTABLES.sql` for exact columns.
+
+## Tests
+
+```bash
+pytest tests/ -v
+```
+
+Covers the password-hashing logic (`db.hash_password` / `db.verify_password`) — no database or
+network connection required.
 
 ## Usage
 
@@ -138,8 +168,11 @@ The application automatically inserts sample data on first run:
 ## Security Notes
 
 - All SQL queries use parameterized statements to prevent SQL injection
-- Database credentials should be stored securely in production (use environment variables)
-- Consider implementing user authentication for production use
+- Database credentials are read from `.env` (see `.env.example`), never hardcoded in source
+- Login passwords are hashed with PBKDF2-HMAC-SHA256 (100,000 iterations, random per-user salt),
+  not stored or compared in plaintext
+- The default `admin` / `admin123` login is meant for local/demo use only — change it (or add a
+  new user via `db.insert_user`) before using this anywhere beyond your own machine
 
 ## Troubleshooting
 

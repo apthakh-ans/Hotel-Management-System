@@ -31,6 +31,7 @@ CREATE TABLE Payment (
   BookingID INT,
   Amount DECIMAL(10,2),
   Method VARCHAR(50),
+  PaymentDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (BookingID) REFERENCES Booking(BookingID)
 );
 
@@ -88,7 +89,7 @@ CREATE TABLE TravelPackage (
 CREATE TABLE UserLogin (
   UserID INT AUTO_INCREMENT PRIMARY KEY,
   Username VARCHAR(50) UNIQUE,
-  Password VARCHAR(255),  -- You can hash this later
+  Password VARCHAR(255),  -- PBKDF2-HMAC-SHA256, stored as "salt_hex$hash_hex" (see db.py hash_password)
   Role VARCHAR(20) DEFAULT 'Admin'
 );
 
@@ -101,7 +102,8 @@ CREATE TABLE RoomMaintenance (
   FOREIGN KEY (RoomID) REFERENCES Room(RoomID)
 );
 
+-- Default login: admin / admin123 (password stored as a PBKDF2-HMAC-SHA256 hash, not plaintext)
 INSERT INTO UserLogin (Username, Password, Role)
-VALUES ('admin', 'admin123', 'Admin');
+VALUES ('admin', '00112233445566778899aabbccddeeff$be8187761f01504afba863a09eda647c096c7cac8cc7f0b3351fc32dba1e014e', 'Admin');
 
 

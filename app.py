@@ -261,11 +261,7 @@ else:
             else:
                 st.info("No bookings found")
 
-            import pandas as pd
-            import datetime
-
             # Pie chart for occupancy (rooms)
-            rooms = fetch_all_rooms()
             if rooms:
                 total_rooms = len(rooms)
                 occupied = sum(1 for r in rooms if str(r[4]) == "0")
@@ -281,7 +277,6 @@ else:
                 })
 
             # Bookings per month (line chart)
-            bookings = fetch_all_bookings()
             if bookings:
                 # Get month from checkin date
                 df = pd.DataFrame(bookings, columns=["BookingID","Guest","Room","CheckIn","CheckOut"])
@@ -291,13 +286,11 @@ else:
                 st.line_chart(bookings_by_month)
 
             # Revenue per month (bar chart)
-            payments = fetch_all_payments()
             if payments:
-                # Assume column 0=ID, 1=Guest, 2=Room, 3=Amount, 4=Method
-                dfp = pd.DataFrame(payments, columns=["PaymentID","Guest","Room","Amount","Method"])
-                # Let's assume PaymentID increments with month as a hack (real one needs payment date)
-                dfp["Month"] = (dfp["PaymentID"] % 12) + 1
-                revenue_by_month = dfp.groupby("Month")["Amount"].sum()
+                dfp = pd.DataFrame(payments, columns=["PaymentID","Guest","Room","Amount","Method","PaymentDate"])
+                dfp["PaymentDate"] = pd.to_datetime(dfp["PaymentDate"])
+                revenue_by_month = dfp.groupby(dfp["PaymentDate"].dt.to_period("M"))["Amount"].sum()
+                revenue_by_month.index = revenue_by_month.index.astype(str)
                 st.write("### Revenue per Month")
                 st.bar_chart(revenue_by_month)
 
@@ -630,7 +623,7 @@ else:
             st.subheader("All Payments")
             payments = fetch_all_payments()
             if payments:
-                df = pd.DataFrame(payments, columns=["Payment ID", "Guest Name", "Room", "Amount", "Method"])
+                df = pd.DataFrame(payments, columns=["Payment ID", "Guest Name", "Room", "Amount", "Method", "Payment Date"])
                 st.dataframe(df, use_container_width=True)
             else:
                 st.info("No payments found")

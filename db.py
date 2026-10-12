@@ -1,19 +1,53 @@
+import hashlib
+import hmac
+import os
+import secrets
+
 import mysql.connector
+from dotenv import load_dotenv
 from mysql.connector import Error
+
+load_dotenv()
+
+DB_CONFIG = {
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "port": int(os.environ.get("DB_PORT", "3306")),
+    "user": os.environ.get("DB_USER", "root"),
+    "password": os.environ.get("DB_PASSWORD", ""),
+    "database": os.environ.get("DB_NAME", "hotel_db"),
+}
+
 
 def get_connection():
     """Create and return a database connection"""
     try:
-        conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="123456",
-            database="hotel_db"
-        )
+        conn = mysql.connector.connect(**DB_CONFIG)
         return conn
     except Error as e:
         print(f"Error connecting to database: {e}")
         return None
+
+
+# ==================== PASSWORD HASHING ====================
+# Passwords are stored as "salt_hex$hash_hex" (PBKDF2-HMAC-SHA256), never in plaintext.
+
+def hash_password(password, salt=None):
+    """Hash a password with a random (or given) salt. Returns 'salt_hex$hash_hex'."""
+    if salt is None:
+        salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+    return f"{salt.hex()}${digest.hex()}"
+
+
+def verify_password(password, stored):
+    """Check a plaintext password against a stored 'salt_hex$hash_hex' value."""
+    try:
+        salt_hex, _ = stored.split("$", 1)
+    except ValueError:
+        return False
+    salt = bytes.fromhex(salt_hex)
+    candidate = hash_password(password, salt=salt)
+    return hmac.compare_digest(candidate, stored)
 
 # ==================== GUEST FUNCTIONS ====================
 
@@ -422,7 +456,7 @@ def fetch_all_payments():
 
         cursor = conn.cursor()
         query = """
-        SELECT p.PaymentID, g.Name, r.RoomNumber, p.Amount, p.Method
+        SELECT p.PaymentID, g.Name, r.RoomNumber, p.Amount, p.Method, p.PaymentDate
         FROM Payment p
         JOIN Booking b ON p.BookingID = b.BookingID
         JOIN Guest g ON b.GuestID = g.GuestID
@@ -809,25 +843,31 @@ def delete_maintenance_log(maintenance_id):
 # ==================== USER AUTHENTICATION ====================
 
 def validate_user(username, password):
-    """Authenticate user"""
+    """Authenticate user against the hashed password stored in the DB"""
     try:
         conn = get_connection()
         if not conn:
             return None
 
         cursor = conn.cursor()
-        query = "SELECT * FROM UserLogin WHERE Username = %s AND Password = %s"
-        cursor.execute(query, (username, password))
+        query = "SELECT * FROM UserLogin WHERE Username = %s"
+        cursor.execute(query, (username,))
         user = cursor.fetchone()
         cursor.close()
         conn.close()
+
+        if user is None:
+            return None
+        stored_password = user[2]  # UserID, Username, Password, Role
+        if not verify_password(password, stored_password):
+            return None
         return user
     except Error as e:
         print(f"Error validating user: {e}")
         return None
 
 def insert_user(username, password, role='Admin'):
-    """Create a new user"""
+    """Create a new user with a hashed password"""
     try:
         conn = get_connection()
         if not conn:
@@ -835,7 +875,7 @@ def insert_user(username, password, role='Admin'):
 
         cursor = conn.cursor()
         query = "INSERT INTO UserLogin (Username, Password, Role) VALUES (%s, %s, %s)"
-        cursor.execute(query, (username, password, role))
+        cursor.execute(query, (username, hash_password(password), role))
         conn.commit()
         cursor.close()
         conn.close()
